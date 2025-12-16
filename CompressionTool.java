@@ -3,10 +3,9 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.util.Comparator;
+import java.util.HashMap;
 import java.util.PriorityQueue;
 import java.util.TreeMap;
-import java.util.TreeSet;
 import java.util.Map.Entry;
 
 public class CompressionTool{
@@ -40,8 +39,19 @@ public class CompressionTool{
         TreeMap<Character,Integer> treeMap = new TreeMap<>();
         String url = new String("c:/Users/admin/Desktop/New folder/pentesting.txt");
         treeMap = (new CompressionTool(url)).charactersOcurrences();
-        // System.out.println(treeMap);
-        HuffmanTree.buildTree(treeMap);
+        // for(Entry<Character,Integer> entry : treeMap.entrySet()){
+        //     System.out.println(entry.getKey() + ":" + entry.getValue());
+        // }
+        
+        HuffmanTree tree = HuffmanTree.buildTree(treeMap); 
+        System.out.println(HuffmanTree.displayTree(tree));
+        String code = "";
+        HashMap<Character,String> map = new HashMap<>();
+        HuffmanTree.generateCodes(map, tree, code);
+        
+        // for(Entry entry : map.entrySet()){
+        //     System.out.println(entry.getKey() + ":" + entry.getValue());
+        // }
     }
 }
 
@@ -124,26 +134,59 @@ class HuffmanTree implements Comparable<HuffmanTree>{
         PriorityQueue<HuffmanTree> queue = new PriorityQueue<>();
         // TreeSet<HuffmanTree> set = new TreeSet<>(Comparator.reverseOrder());
         HuffmanTree tree = null;
+        // int c = 0;
         for(Entry<Character, Integer> entry : map.entrySet()){
             HuffmanBaseNode leaf = new HuffmanLeafNode(entry.getKey(),entry.getValue());
             HuffmanTree newtree = new HuffmanTree(leaf);
             queue.add(newtree);
+            // c+=entry.getValue();
             // set.add(tree);
         }
-        while (!queue.isEmpty()) {
-            System.out.println(queue.poll());
+        // System.out.println(c);
+        while (queue.size() > 1) {
+            // System.out.println(queue.poll());
             HuffmanTree left = queue.poll();
             HuffmanTree right = queue.poll();
-            HuffmanBaseNode leftNode = null;
-            HuffmanBaseNode rightNode = null;
-            if(left != null) leftNode = left.getRoot();
-            if(right != null) rightNode = right.getRoot();
-            HuffmanInternalNode internal = new HuffmanInternalNode(leftNode,rightNode);
+            HuffmanInternalNode internal = new HuffmanInternalNode(left.getRoot(),right.getRoot());
             tree = new HuffmanTree(internal);
             queue.add(tree);
         }
-        System.out.println("Final tree: " + tree);
+        tree = queue.poll();
+        // System.out.println(tree);
         return tree;
+    }
+
+    static String displayTree(HuffmanTree tree){
+        if(tree == null) return "";
+        if(tree.getRoot().isLeaf()){
+            HuffmanLeafNode leaf = (HuffmanLeafNode)tree.getRoot();
+            // System.out.println("(" + leaf.getChar() + "::" + leaf.weight() + ")");
+            return "(" + leaf.getChar() + "::" + leaf.weight() + ")";
+        }       
+        else{
+            HuffmanInternalNode internal = (HuffmanInternalNode)tree.getRoot();
+            // System.out.println(internal.weight() + "\n /\\");
+            // System.out.println("left:");
+            // displayTree(new HuffmanTree(internal.getLeft()));
+            // System.out.println("right:");
+            // displayTree(new HuffmanTree(internal.getRight()));
+            StringBuilder sb = new StringBuilder("\t" + internal.weight() + "\n/\\\n");
+            sb.append(displayTree(new HuffmanTree(internal.getLeft())));
+            sb.append("\t\t" + displayTree(new HuffmanTree(internal.getRight())));
+            return sb.toString();
+        }
+    }
+
+    static void generateCodes(HashMap<Character,String> map, HuffmanTree tree, String code){
+        if(tree == null) return;
+        if(tree.getRoot() == null) return;
+        if(tree.getRoot().isLeaf()){
+            map.put(((HuffmanLeafNode)tree.getRoot()).getChar(), code);
+        }
+        else if(!tree.getRoot().isLeaf()){
+            generateCodes(map, new HuffmanTree(((HuffmanInternalNode)tree.getRoot()).getLeft()), code+"0");
+            generateCodes(map, new HuffmanTree(((HuffmanInternalNode)tree.getRoot()).getRight()), code+"1");
+        }
     }
 
     @Override
