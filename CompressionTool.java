@@ -68,20 +68,30 @@ public class CompressionTool{
             String s = "";
             for(int i=0;i<content.length();i++){
                 s = s+content.charAt(i);
+                // System.out.println(s);
                 if (s.length()==8) {
                     //use int as temporary container to manage bits int is 32 bits but in the file just the 8 bits will be written 0s in the left will be ingnored
                     // 00000000 00000000 00000001 01101100 only the last 8 bits will be written cuz write() only write 8 bits
                     int value = 0;
-                    for(int j=0;j<8;i++){
+                    for(int j=0;j<8;j++){
                         //left shifting for each step and use bitwise OR to make shifting by 1 or 0 depending on the char soming from s is 0 or 1
+                        // byte b = (byte) Integer.parseInt(s, 2);
                         value = (value << 1) | (s.charAt(j)-'0');
+                        
+                        System.out.println(value);
                     }
                     s = "";
-                    bf.write(value);
+                    byte b = (byte) value;
+                    System.out.println("fpofk");
+                    //0xFF to pick the last 8 bits it means 255 (unsigned) or -1 (signed) it means 11111111 each F has 4 bits
+                    // means if we talks about 32 bits we got 00000 .... 11111111 (value is int and coming with 32 bits we pass it to byte and apply &) and & make us pick the last 8 bits and cancel all the other as write() only accepts 8 bits
+                    bf.write( b & 0xFF);
+                    //bf.write( value & 0xFF); //also correct
                 }
             }
             if (!s.isEmpty()) {
                 s += "00000000".substring(8-(s.length()%8));
+                //to complete tmrw
             }
         } catch (IOException e) {
             System.err.println("problem with writing..");
@@ -132,7 +142,7 @@ public class CompressionTool{
     public static void main(String[] args){
         TreeMap<Character,Integer> treeMap = new TreeMap<>();
         String url = new String("test.txt");
-        String outputUrl = new String("output.txt");
+        String outputUrl = new String("output.bin");
         // String url = new String("c:/Users/admin/Desktop/New folder/pentesting.txt");
         treeMap = (new CompressionTool(url)).charactersOcurrences();
         for(Entry<Character,Integer> entry : treeMap.entrySet()){
@@ -149,21 +159,25 @@ public class CompressionTool{
         }
 
         System.out.println("***************reading content***************");
-        String content = CompressionTool.extractText(url);
+        String content = extractText(url);
         System.out.println(content);
 
         System.out.println("************encoded**************");
-        String encoded = CompressionTool.encodeText(content, map);
+        String encoded = encodeText(content, map);
         System.out.println(encoded);
 
         System.out.println("************header**************");
         StringBuilder sb = new StringBuilder();
-        CompressionTool.ExtractHeaderFromTree(sb, tree);
+        ExtractHeaderFromTree(sb, tree);
         String header = sb.toString();
         System.out.println(header);
 
-        System.out.println("**************write header isnide the output file****************");
-        writeHeader(outputUrl, header);
+        // System.out.println("**************write header isnide the output file****************");
+        // writeHeader(outputUrl, header);
+
+        System.out.println("**************write content isnide the output file****************");
+        writeContent(outputUrl, encoded);
+        System.out.println("done");
     }
 }
 
