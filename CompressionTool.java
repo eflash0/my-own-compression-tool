@@ -1,9 +1,11 @@
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -13,6 +15,8 @@ import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.TreeMap;
 import java.util.Map.Entry;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class CompressionTool{
     private String fileUrl;
@@ -42,24 +46,93 @@ public class CompressionTool{
         return map;
     }
 
-    static void writeHeader(String url,TreeMap<Character,Integer> header){
+    //header as freq table or tree
+    static void writeHeader(String url,/*TreeMap<Character,Integer>*/String header){
         //File can t be declared separately inside try with ressources cuz it is not autocloseable
         try (FileOutputStream out = new FileOutputStream(new File(url));
         BufferedOutputStream bf = new BufferedOutputStream(out)){
-            for(Character c : header.keySet()){
-                bf.write(new String(c + ":" + header.get(c)).getBytes(StandardCharsets.UTF_8));
-            }
-            bf.write("***".getBytes(StandardCharsets.UTF_8));
+            // for(Character c : header.keySet()){
+            //     bf.write(new String(c + ":" + header.get(c)).getBytes(StandardCharsets.UTF_8));
+            // }
+            bf.write(header.getBytes(StandardCharsets.UTF_8));
+            bf.write("0".getBytes(StandardCharsets.UTF_8));
         }
         catch(IOException e){
             System.err.println("problem with writing");
+        } 
+    }
+
+    static void writeContent(String url,String content){
+        try (FileOutputStream out = new FileOutputStream(new File(url));
+        BufferedOutputStream bf = new BufferedOutputStream(out)) {
+            String s = "";
+            for(int i=0;i<content.length();i++){
+                s = s+content.charAt(i);
+                if (s.length()==8) {
+                    //use int as temporary container to manage bits int is 32 bits but in the file just the 8 bits will be written 0s in the left will be ingnored
+                    // 00000000 00000000 00000001 01101100 only the last 8 bits will be written cuz write() only write 8 bits
+                    int value = 0;
+                    for(int j=0;j<8;i++){
+                        //left shifting for each step and use bitwise OR to make shifting by 1 or 0 depending on the char soming from s is 0 or 1
+                        value = (value << 1) | (s.charAt(j)-'0');
+                    }
+                    s = "";
+                    bf.write(value);
+                }
+            }
+            if (!s.isEmpty()) {
+                s += "00000000".substring(8-(s.length()%8));
+            }
+        } catch (IOException e) {
+            System.err.println("problem with writing..");
         }
-        
+    }
+
+    static String extractText(String url){
+        String s = "";
+        try (FileReader fr = new FileReader(url); BufferedReader bf = new BufferedReader(fr)) {
+            Stream<String> stream = bf.lines();
+            // stream.forEach(line -> s+=line);
+            s = stream.collect(Collectors.joining());
+            // String line;
+            // while ((line = bf.readLine()) != null) {
+            //     s += line;
+            // }
+        } catch (Exception e) {
+            System.err.println("problem with reading..");
+        }
+        return s;
+    }
+
+    //dfs or post traversal
+    static void ExtractHeaderFromTree(/*String s*/StringBuilder sb,HuffmanTree tree){ // String is immutable and when changing a string variable value we create another string internally it is just one thread immutability prevent multithreading and guarantee safety so basically the variable passed from main is passed by value and the changes inside the method doesn t affect it cuz it still reference the old value
+        //String builder in the other hand is mutable so we can change the object no need to create another one internally
+        if (tree == null) return;
+        if(tree.getRoot().isLeaf()){
+            HuffmanLeafNode leaf = (HuffmanLeafNode)tree.getRoot();
+            sb.append("1"+leaf.getChar());
+            // System.out.println(sb);
+        }
+        else{
+            sb.append("0");
+            HuffmanInternalNode internalNode = (HuffmanInternalNode)tree.getRoot();
+            ExtractHeaderFromTree(sb, new HuffmanTree(internalNode.getLeft()));
+            ExtractHeaderFromTree(sb, new HuffmanTree(internalNode.getRight()));
+        }
+    }
+
+    static String encodeText(String text,HashMap<Character,String> codes){
+        String encoded = "";
+        for(char c : text.toCharArray()){
+            encoded += codes.get(c);
+        }
+        return encoded;
     }
 
     public static void main(String[] args){
         TreeMap<Character,Integer> treeMap = new TreeMap<>();
         String url = new String("test.txt");
+        String outputUrl = new String("output.txt");
         // String url = new String("c:/Users/admin/Desktop/New folder/pentesting.txt");
         treeMap = (new CompressionTool(url)).charactersOcurrences();
         for(Entry<Character,Integer> entry : treeMap.entrySet()){
@@ -68,15 +141,29 @@ public class CompressionTool{
         
         HuffmanTree tree = HuffmanTree.buildTree(treeMap); 
         // HuffmanTree.displayTree(tree);
-        String code = "";
         HashMap<Character,String> map = new HashMap<>();
-        HuffmanTree.generateCodes(map, tree, code);
+        HuffmanTree.generateCodes(map, tree, "");
         
         for(Entry entry : map.entrySet()){
             System.out.println(entry.getKey() + ":" + entry.getValue());
         }
 
+        System.out.println("***************reading content***************");
+        String content = CompressionTool.extractText(url);
+        System.out.println(content);
 
+        System.out.println("************encoded**************");
+        String encoded = CompressionTool.encodeText(content, map);
+        System.out.println(encoded);
+
+        System.out.println("************header**************");
+        StringBuilder sb = new StringBuilder();
+        CompressionTool.ExtractHeaderFromTree(sb, tree);
+        String header = sb.toString();
+        System.out.println(header);
+
+        System.out.println("**************write header isnide the output file****************");
+        writeHeader(outputUrl, header);
     }
 }
 
