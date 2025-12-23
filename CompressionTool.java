@@ -54,44 +54,87 @@ public class CompressionTool{
             // for(Character c : header.keySet()){
             //     bf.write(new String(c + ":" + header.get(c)).getBytes(StandardCharsets.UTF_8));
             // }
-            bf.write(header.getBytes(StandardCharsets.UTF_8));
-            bf.write("0".getBytes(StandardCharsets.UTF_8));
+            int buffer = 0;
+            int bitCount = 0;
+            for (int i = 0; i < header.length(); i++) {
+                if(header.charAt(i) == '0' || header.charAt(i) == '1'){
+                    buffer = (buffer << 1) | header.charAt(i) - '0';
+                    bitCount++;
+                }
+                else{
+                    // value = (value << 8) | (byte)header.charAt(i);
+                    buffer = (buffer << 8) | header.charAt(i) & 0xFF;
+                    bitCount += 8;
+                }
+                while(bitCount >= 8){
+                    int temp = (buffer >> 1);
+                    bitCount -= 8;
+                    bf.write(temp & 0xFF);
+                    buffer = (buffer & 1);
+                }
+            }
+            if (bitCount>0 && bitCount<8) {
+                buffer = (buffer << 8-bitCount);
+                bf.write(buffer);
+            }
         }
         catch(IOException e){
             System.err.println("problem with writing");
         } 
     }
 
+    static String headerToBitsString(String header){
+        String s = "";
+        for (int i = 0; i < header.length(); i++) {
+            if(header.charAt(i) == '0' || header.charAt(i) == '1'){
+                s += header.charAt(i);
+            }
+            else{
+                byte b = (byte)header.charAt(i);
+                int value = 0;
+                for(int j=0;j<8;j++){
+                    value = (value << 1) 
+                }
+            }
+        }
+        return s;
+    }
+
     static void writeContent(String url,String content){
         try (FileOutputStream out = new FileOutputStream(new File(url));
         BufferedOutputStream bf = new BufferedOutputStream(out)) {
             String s = "";
+            System.out.println(content.length());
             for(int i=0;i<content.length();i++){
                 s = s+content.charAt(i);
                 // System.out.println(s);
                 if (s.length()==8) {
+                    // byte b = (byte) Integer.parseInt(s, 2); //it parses the string in base 2
                     //use int as temporary container to manage bits int is 32 bits but in the file just the 8 bits will be written 0s in the left will be ingnored
                     // 00000000 00000000 00000001 01101100 only the last 8 bits will be written cuz write() only write 8 bits
                     int value = 0;
                     for(int j=0;j<8;j++){
                         //left shifting for each step and use bitwise OR to make shifting by 1 or 0 depending on the char soming from s is 0 or 1
-                        // byte b = (byte) Integer.parseInt(s, 2);
                         value = (value << 1) | (s.charAt(j)-'0');
-                        
-                        System.out.println(value);
+                        // System.out.println(value);
                     }
                     s = "";
                     byte b = (byte) value;
-                    System.out.println("fpofk");
                     //0xFF to pick the last 8 bits it means 255 (unsigned) or -1 (signed) it means 11111111 each F has 4 bits
                     // means if we talks about 32 bits we got 00000 .... 11111111 (value is int and coming with 32 bits we pass it to byte and apply &) and & make us pick the last 8 bits and cancel all the other as write() only accepts 8 bits
                     bf.write( b & 0xFF);
                     //bf.write( value & 0xFF); //also correct
                 }
             }
+            int value = 0;
             if (!s.isEmpty()) {
-                s += "00000000".substring(8-(s.length()%8));
-                //to complete tmrw
+                // System.out.println(s);
+                s += "0000000".substring(7-8%s.length());
+                // System.out.println(s);
+                for (int j=0;j<s.length();j++) {
+                    value = (value << 1) | s.charAt(j)-'0';
+                }
+                bf.write(value & 0xFF);
             }
         } catch (IOException e) {
             System.err.println("problem with writing..");
@@ -172,12 +215,15 @@ public class CompressionTool{
         String header = sb.toString();
         System.out.println(header);
 
+        System.out.println("**************test header to bits****************");
+        String header2 = headerToBitsString(header);
+        System.out.println(header2);
+        
         // System.out.println("**************write header isnide the output file****************");
         // writeHeader(outputUrl, header);
 
-        System.out.println("**************write content isnide the output file****************");
-        writeContent(outputUrl, encoded);
-        System.out.println("done");
+        // System.out.println("**************write content isnide the output file****************");
+        // writeContent(outputUrl, encoded);
     }
 }
 
