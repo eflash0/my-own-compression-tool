@@ -1,15 +1,14 @@
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
+import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.PriorityQueue;
 import java.util.Queue;
@@ -47,66 +46,102 @@ public class CompressionTool{
     }
 
     //header as freq table or tree
-    static void writeHeader(String url,/*TreeMap<Character,Integer>*/String header){
+    static void writeHeader1(String url,/*TreeMap<Character,Integer>*/String header){
         //File can t be declared separately inside try with ressources cuz it is not autocloseable
         try (FileOutputStream out = new FileOutputStream(new File(url));
         BufferedOutputStream bf = new BufferedOutputStream(out)){
             // for(Character c : header.keySet()){
             //     bf.write(new String(c + ":" + header.get(c)).getBytes(StandardCharsets.UTF_8));
             // }
+
+            writeBits(url, header);
+            bf.write(0);
+            String s = "";
+            String s1 = "";
             int buffer = 0;
             int bitCount = 0;
+            int c = 0;
             for (int i = 0; i < header.length(); i++) {
                 if(header.charAt(i) == '0' || header.charAt(i) == '1'){
                     buffer = (buffer << 1) | header.charAt(i) - '0';
                     bitCount++;
+                    c++;
+                    s += header.charAt(i);
                 }
                 else{
                     // value = (value << 8) | (byte)header.charAt(i);
                     buffer = (buffer << 8) | header.charAt(i) & 0xFF;
                     bitCount += 8;
+                    c += 8;
+                    s += Integer.toBinaryString(header.charAt(i));
                 }
                 while(bitCount >= 8){
-                    int temp = (buffer >> 1);
+                    int shift = bitCount-8;
+                    int temp = (buffer >> shift);
                     bitCount -= 8;
                     bf.write(temp & 0xFF);
-                    buffer = (buffer & 1);
+                    s1 += Integer.toBinaryString(temp);
+                    // buffer = buffer & ((int)(Math.pow(2, bitCount))-1);
+                    //pow(2,n) = (1 << bitCount) and -1 is to make n 1s to pick only the last bits
+                    //we need only binary num with 1s 11=3 111=7 etc
+                    buffer &= ((1 << bitCount)-1);
                 }
             }
             if (bitCount>0 && bitCount<8) {
-                buffer = (buffer << 8-bitCount);
-                bf.write(buffer);
+                buffer <<= (8-bitCount);
+                c += (8-bitCount);
+                bf.write(buffer & 0xFF);
+                s1 += Integer.toBinaryString(buffer);
             }
+            System.out.println(c);
+            System.out.println(s);
+            System.out.println(s1);
         }
         catch(IOException e){
             System.err.println("problem with writing");
         } 
     }
 
-    static String headerToBitsString(String header){
-        String s = "";
-        for (int i = 0; i < header.length(); i++) {
-            if(header.charAt(i) == '0' || header.charAt(i) == '1'){
-                s += header.charAt(i);
-            }
-            else{
-                byte b = (byte)header.charAt(i);
-                int value = 0;
-                for(int j=0;j<8;j++){
-                    value = (value << 1) 
-                }
-            }
+    //header as freq table or tree (tree in our case)
+    static void writeHeader(String url,String header,int uncompressed,int compressed){
+        //File can t be declared separately inside try with ressources cuz it is not autocloseable
+        try{
+            // for (int i = 3; i >= 0; i--) {
+            //     bf.write((uncompressed >> i*8) & 0xFF);
+            // }
+            FileOutputStream out = new FileOutputStream(new File(url));
+            BufferedOutputStream bos = new BufferedOutputStream(out);
+            DataOutputStream dos = new DataOutputStream(bos);
+            dos.writeInt(compressed);
+            dos.writeInt(header.length());
+            dos.writeInt(uncompressed);
+            dos.close();
+            bos = writeBits(url, header);
+            bos.write(0);
+            //buffere need to be closed so it can flush data into the file
+            bos.close();
         }
-        return s;
+        catch(IOException e){
+            System.err.println("problem with writing");
+        } 
     }
 
     static void writeContent(String url,String content){
-        try (FileOutputStream out = new FileOutputStream(new File(url));
-        BufferedOutputStream bf = new BufferedOutputStream(out)) {
+        try {
+            writeBits(url, content).close();
+        } catch (IOException e) {
+            System.err.println("problem with writing");
+        }
+    }
+
+    static BufferedOutputStream writeBits(String url,String bits){
+        try  {
+            FileOutputStream out = new FileOutputStream(new File(url));
+            BufferedOutputStream bf = new BufferedOutputStream(out);
             String s = "";
-            System.out.println(content.length());
-            for(int i=0;i<content.length();i++){
-                s = s+content.charAt(i);
+            System.out.println(bits.length());
+            for(int i=0;i<bits.length();i++){
+                s = s+bits.charAt(i);
                 // System.out.println(s);
                 if (s.length()==8) {
                     // byte b = (byte) Integer.parseInt(s, 2); //it parses the string in base 2
@@ -124,21 +159,26 @@ public class CompressionTool{
                     // means if we talks about 32 bits we got 00000 .... 11111111 (value is int and coming with 32 bits we pass it to byte and apply &) and & make us pick the last 8 bits and cancel all the other as write() only accepts 8 bits
                     bf.write( b & 0xFF);
                     //bf.write( value & 0xFF); //also correct
-                }
+                }           
             }
             int value = 0;
             if (!s.isEmpty()) {
                 // System.out.println(s);
-                s += "0000000".substring(7-8%s.length());
+                s += "00000000".substring(s.length());
+                // s += s1;
                 // System.out.println(s);
                 for (int j=0;j<s.length();j++) {
                     value = (value << 1) | s.charAt(j)-'0';
                 }
                 bf.write(value & 0xFF);
             }
-        } catch (IOException e) {
+            //didn t close the buffer cuz it will be passed to writeContent or writeHeader
+            return bf;
+        } 
+        catch (IOException e) {
             System.err.println("problem with writing..");
         }
+        return null;
     }
 
     static String extractText(String url){
@@ -163,8 +203,10 @@ public class CompressionTool{
         if (tree == null) return;
         if(tree.getRoot().isLeaf()){
             HuffmanLeafNode leaf = (HuffmanLeafNode)tree.getRoot();
-            sb.append("1"+leaf.getChar());
-            // System.out.println(sb);
+            sb.append("1");
+            String bits = String.format("%8s", Integer.toBinaryString(leaf.getChar()))
+                     .replace(' ', '0');
+            sb.append(bits);         
         }
         else{
             sb.append("0");
@@ -174,12 +216,61 @@ public class CompressionTool{
         }
     }
 
+    static void testWrite(String url){
+        try (FileOutputStream out = new FileOutputStream(new File(url));
+            BufferedOutputStream bfOut = new BufferedOutputStream(out)) {
+            bfOut.write(0xAF);
+        } catch (Exception e) {
+            // TODO: handle exception
+        }
+    }
+
+    static void testRead(String url){
+        try (FileInputStream in = new FileInputStream(new File(url));
+            BufferedInputStream bf = new BufferedInputStream(in)) {
+                int b;
+                String s = "";
+                String s1 = "";
+                while ((b=bf.read()) != -1) {
+                    s1 = Integer.toBinaryString(b);
+                    // System.out.println(s1);
+                    if(s1.length()%8 > 0){
+                        s1 = ("00000000".substring(s1.length()) + s1);
+                        // System.out.println(s1);
+                    }    
+                    s += s1;
+                }
+            System.out.println(s);
+            // System.out.println(s);
+        } 
+        catch (IOException e) {
+            System.err.println("problem with reading");
+        }
+    }
+
     static String encodeText(String text,HashMap<Character,String> codes){
         String encoded = "";
         for(char c : text.toCharArray()){
             encoded += codes.get(c);
         }
         return encoded;
+    }
+
+    static String readFile(String url){
+        String s = "";
+        try (FileInputStream in = new FileInputStream(new File(url));
+            BufferedInputStream bf = new BufferedInputStream(in)) {            
+            int b;
+            while((b = bf.read()) != -1) {
+                // System.out.println(Integer.toBinaryString(b));
+                s += Integer.toBinaryString(b & 0xFF);
+            }
+            s += "\n"+s.length();
+        } 
+        catch (Exception e) {
+            // TODO: handle exception
+        }
+        return s;
     }
 
     public static void main(String[] args){
@@ -214,16 +305,24 @@ public class CompressionTool{
         ExtractHeaderFromTree(sb, tree);
         String header = sb.toString();
         System.out.println(header);
-
-        System.out.println("**************test header to bits****************");
-        String header2 = headerToBitsString(header);
-        System.out.println(header2);
         
-        // System.out.println("**************write header isnide the output file****************");
-        // writeHeader(outputUrl, header);
+        System.out.println("**************write header inside the output file****************");
+        writeHeader(outputUrl, header, content.length(), encoded.length());
 
-        // System.out.println("**************write content isnide the output file****************");
+        // System.out.println("**************write content inside the output file****************");
         // writeContent(outputUrl, encoded);
+
+        // System.out.println("**************reading compressed file****************");
+        // String s1 = readFile(outputUrl);
+        // System.out.println(s1);
+        System.out.println("**************test read write****************");
+        // testWrite("test.bin");
+        testRead("output.bin");
+        // int value = 'h' & 0xFF;
+        // System.out.println(Integer.toBinaryString(value));
+        // String bits = String.format("%8s", Integer.toBinaryString(value))
+        //              .replace(' ', '0');
+        // System.out.println(bits);
     }
 }
 
