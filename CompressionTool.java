@@ -1,6 +1,7 @@
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
+import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -54,7 +55,7 @@ public class CompressionTool{
             //     bf.write(new String(c + ":" + header.get(c)).getBytes(StandardCharsets.UTF_8));
             // }
 
-            writeBits(url, header);
+            writeBits(bf, header);
             bf.write(0);
             String s = "";
             String s1 = "";
@@ -103,41 +104,44 @@ public class CompressionTool{
     }
 
     //header as freq table or tree (tree in our case)
-    static void writeHeader(String url,String header,int uncompressed,int compressed){
+    static void writeHeader(BufferedOutputStream bos,String header,int uncompressed,int compressed){
         //File can t be declared separately inside try with ressources cuz it is not autocloseable
         try{
             // for (int i = 3; i >= 0; i--) {
             //     bf.write((uncompressed >> i*8) & 0xFF);
             // }
-            FileOutputStream out = new FileOutputStream(new File(url));
-            BufferedOutputStream bos = new BufferedOutputStream(out);
             DataOutputStream dos = new DataOutputStream(bos);
             dos.writeInt(compressed);
             dos.writeInt(header.length());
             dos.writeInt(uncompressed);
-            dos.close();
-            bos = writeBits(url, header);
+            System.out.println(compressed + " " + uncompressed + " " + header.length());
+            writeBits(bos, header);
             bos.write(0);
             //buffere need to be closed so it can flush data into the file
-            bos.close();
+            // bos.flush();
         }
         catch(IOException e){
             System.err.println("problem with writing");
         } 
     }
 
-    static void writeContent(String url,String content){
-        try {
-            writeBits(url, content).close();
-        } catch (IOException e) {
+    static void writeContent(BufferedOutputStream bos,String content){
+        writeBits(bos, content);
+    }
+
+    static void writeHeaderAndContent(String url,String header,String encoded,int uncompressed,int compressed){
+        try (FileOutputStream out = new FileOutputStream(new File(url));
+            BufferedOutputStream bos = new BufferedOutputStream(out);) {
+            writeHeader(bos, header, uncompressed, compressed);
+            writeContent(bos, encoded);
+            bos.close();
+        } catch (Exception e) {
             System.err.println("problem with writing");
         }
     }
 
-    static BufferedOutputStream writeBits(String url,String bits){
+    static void writeBits(BufferedOutputStream bf,String bits){
         try  {
-            FileOutputStream out = new FileOutputStream(new File(url));
-            BufferedOutputStream bf = new BufferedOutputStream(out);
             String s = "";
             System.out.println(bits.length());
             for(int i=0;i<bits.length();i++){
@@ -172,13 +176,10 @@ public class CompressionTool{
                 }
                 bf.write(value & 0xFF);
             }
-            //didn t close the buffer cuz it will be passed to writeContent or writeHeader
-            return bf;
         } 
         catch (IOException e) {
             System.err.println("problem with writing..");
         }
-        return null;
     }
 
     static String extractText(String url){
@@ -201,12 +202,14 @@ public class CompressionTool{
     static void ExtractHeaderFromTree(/*String s*/StringBuilder sb,HuffmanTree tree){ // String is immutable and when changing a string variable value we create another string internally it is just one thread immutability prevent multithreading and guarantee safety so basically the variable passed from main is passed by value and the changes inside the method doesn t affect it cuz it still reference the old value
         //String builder in the other hand is mutable so we can change the object no need to create another one internally
         if (tree == null) return;
+        
         if(tree.getRoot().isLeaf()){
             HuffmanLeafNode leaf = (HuffmanLeafNode)tree.getRoot();
             sb.append("1");
             String bits = String.format("%8s", Integer.toBinaryString(leaf.getChar()))
                      .replace(' ', '0');
             sb.append(bits);         
+            // sb.append(leaf.getChar());         
         }
         else{
             sb.append("0");
@@ -216,7 +219,7 @@ public class CompressionTool{
         }
     }
 
-    static void testWrite(String url){
+    static void testWrite(String url,String content){
         try (FileOutputStream out = new FileOutputStream(new File(url));
             BufferedOutputStream bfOut = new BufferedOutputStream(out)) {
             bfOut.write(0xAF);
@@ -225,13 +228,32 @@ public class CompressionTool{
         }
     }
 
-    static void testRead(String url){
+    static HashMap<String,Object> readCompressedFile(String url){
+        HashMap<String,Object> map = new HashMap<>();
         try (FileInputStream in = new FileInputStream(new File(url));
             BufferedInputStream bf = new BufferedInputStream(in)) {
+                DataInputStream dis = new DataInputStream(in); 
+                boolean delimiter = false; 
+                Integer compressedLength = dis.readInt();
+                Integer uncompressedLength = dis.readInt();
+                Integer headerLength = dis.readInt();
+                map.put("compressedLength", compressedLength);
+                map.put("uncompressedLength", uncompressedLength);
+                map.put("headerLength", headerLength);
+                // System.out.println(compressedLength);
+                // System.out.println(uncompressedLength);
+                // System.out.println(headerLength);
                 int b;
                 String s = "";
                 String s1 = "";
+                String header = "";
+                String content = "";
                 while ((b=bf.read()) != -1) {
+                    if (b == 0) {
+                        delimiter = true;
+                        continue;
+                    }
+                    
                     s1 = Integer.toBinaryString(b);
                     // System.out.println(s1);
                     if(s1.length()%8 > 0){
@@ -239,12 +261,32 @@ public class CompressionTool{
                         // System.out.println(s1);
                     }    
                     s += s1;
+                    if(delimiter == false)
+                        header += s1;
+                    
+                    else
+                        content += s1;
+                        
                 }
-            System.out.println(s);
+                map.put("header", header);
+                map.put("content", content);
             // System.out.println(s);
         } 
         catch (IOException e) {
             System.err.println("problem with reading");
+        }
+        return map;
+    }
+
+    static void decodeHeaderToTree(String s,HuffmanTree tree){
+        for(int i=0;i<s.length();i++){
+            if(s.charAt(i) == '0'){
+                HuffmanInternalNode internalNode = new HuffmanInternalNode(null, null);
+                tree = new HuffmanTree(internalNode);
+            }
+            else if(s.charAt(i) == '1'){
+                
+            }
         }
     }
 
@@ -305,19 +347,26 @@ public class CompressionTool{
         ExtractHeaderFromTree(sb, tree);
         String header = sb.toString();
         System.out.println(header);
-        
-        System.out.println("**************write header inside the output file****************");
-        writeHeader(outputUrl, header, content.length(), encoded.length());
 
-        // System.out.println("**************write content inside the output file****************");
-        // writeContent(outputUrl, encoded);
+        System.out.println("**************write content inside the output file****************");
+        writeHeaderAndContent(outputUrl,header,encoded,content.length(),encoded.length());
 
         // System.out.println("**************reading compressed file****************");
         // String s1 = readFile(outputUrl);
         // System.out.println(s1);
         System.out.println("**************test read write****************");
         // testWrite("test.bin");
-        testRead("output.bin");
+        HashMap<String,Object> map1 = readCompressedFile(outputUrl);
+        String extractedHeader = (String)map1.get("header");
+        String extractedContent = (String)map1.get("content");;
+        int headerLength = (Integer)map1.get("headerLength");
+        int compressedLength = (Integer)map1.get("compressedLength");;
+        int uncompressedLength = (Integer)map1.get("uncompressedLength");;
+        System.out.println(extractedHeader);
+        System.out.println(extractedContent);
+        System.out.println(headerLength);
+        System.out.println(compressedLength);
+        System.out.println(uncompressedLength);
         // int value = 'h' & 0xFF;
         // System.out.println(Integer.toBinaryString(value));
         // String bits = String.format("%8s", Integer.toBinaryString(value))
