@@ -13,6 +13,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.PriorityQueue;
 import java.util.Queue;
+import java.util.Stack;
 import java.util.TreeMap;
 import java.util.Map.Entry;
 import java.util.stream.Collectors;
@@ -266,7 +267,6 @@ public class CompressionTool{
                     
                     else
                         content += s1;
-                        
                 }
                 map.put("header", header);
                 map.put("content", content);
@@ -278,16 +278,70 @@ public class CompressionTool{
         return map;
     }
 
-    static void decodeHeaderToTree(String s,HuffmanTree tree){
-        for(int i=0;i<s.length();i++){
-            if(s.charAt(i) == '0'){
-                HuffmanInternalNode internalNode = new HuffmanInternalNode(null, null);
-                tree = new HuffmanTree(internalNode);
-            }
-            else if(s.charAt(i) == '1'){
-                
+    // static HuffmanTree decodeHeaderToTree1(String s){
+    //     if(s==null || s.isEmpty())
+    //         return null;
+    //     Stack<HuffmanBaseNode> stack = new Stack<>();
+    //     for(int i=0;i<s.length();i++){
+    //         if(s.charAt(i) == '1'){
+    //             ++i;
+    //             String characterBits = s.substring(i,i+8);
+    //             char c = (char) Integer.parseInt(characterBits, 2); 
+    //             // the num of occurences is not important we just want the same tree with the same structure and chars in their same position otherwise weights are no longer important
+    //             HuffmanLeafNode leaf = new HuffmanLeafNode(c, 0); 
+    //             stack.add(leaf);
+    //             i += 7;
+    //         }
+    //         else if(s.charAt(i) == '0'){
+    //             HuffmanInternalNode internal = new HuffmanInternalNode(null, null, 0);
+    //             stack.add(internal);
+    //         }
+    //     }
+    //     while(stack.size() != 1){
+            
+    //     }
+    // }
+    
+    static HuffmanBaseNode decodeHeaderToTree(String s,int[] index){
+        HuffmanInternalNode tree = null;
+        if(s.charAt(index[0]) == '0'){
+            ++index[0];
+            tree = new HuffmanInternalNode(null, null,0);
+            tree.setLeft(decodeHeaderToTree(s, index));
+            tree.setRight(decodeHeaderToTree(s, index));
+        }
+        else if(s.charAt(index[0]++) == '1'){
+            String character = s.substring(index[0], index[0]+8);
+            index[0] += 8;
+            Character c = (char) Integer.parseInt(character, 2);
+            HuffmanLeafNode leaf = new HuffmanLeafNode(c, 0);
+            return leaf;
+        }
+        return tree;
+    }
+
+    static <K,V> HashMap<V,K> flipMap(HashMap<K,V> map){
+        HashMap<V,K> flippedMap = new HashMap<>();
+        for(Entry<K,V> entry:map.entrySet()){
+            flippedMap.put(entry.getValue(), entry.getKey());
+        }
+        return flippedMap;
+    }
+
+    //never change a variable after using it in stream/lambda expression as it should be final or behave as final var as streams are lazy (lazy execution)
+    static String decodeContent(String encodedContent, HashMap<Character,String> codes){
+        StringBuilder decodedContent = new StringBuilder();
+        StringBuilder decodedCharacter = new StringBuilder();
+        HashMap<String,Character> flipped = flipMap(codes);
+        for(char c:encodedContent.toCharArray()){
+            decodedCharacter.append(c);
+            if(flipped.containsKey(decodedCharacter.toString())){
+                decodedContent.append(flipped.get(decodedCharacter.toString()));
+                // decodedCharacter = new StringBuilder();
+                decodedCharacter.setLength(0); //better than the above
             }
         }
+        return decodedContent.toString();
     }
 
     static String encodeText(String text,HashMap<Character,String> codes){
@@ -321,9 +375,9 @@ public class CompressionTool{
         String outputUrl = new String("output.bin");
         // String url = new String("c:/Users/admin/Desktop/New folder/pentesting.txt");
         treeMap = (new CompressionTool(url)).charactersOcurrences();
-        for(Entry<Character,Integer> entry : treeMap.entrySet()){
-            System.out.println(entry.getKey() + ":" + entry.getValue());
-        }
+        // for(Entry<Character,Integer> entry : treeMap.entrySet()){
+        //     System.out.println(entry.getKey() + ":" + entry.getValue());
+        // }
         
         HuffmanTree tree = HuffmanTree.buildTree(treeMap); 
         // HuffmanTree.displayTree(tree);
@@ -372,6 +426,28 @@ public class CompressionTool{
         // String bits = String.format("%8s", Integer.toBinaryString(value))
         //              .replace(' ', '0');
         // System.out.println(bits);
+
+        //decode header to tree
+        System.out.println("**************decode header to tree****************");
+        int index[] = {0};
+        HuffmanTree decodedTree = new HuffmanTree(decodeHeaderToTree(extractedHeader, index));
+        // HuffmanTree.displayTree(decodedTree);
+        HashMap<Character,String> codes = new HashMap<>();
+        HuffmanTree.generateCodes(codes, decodedTree, "");
+        for(Entry entry : codes.entrySet()){
+            if(!entry.getValue().equals(map.get(entry.getKey()))){
+                System.out.println(false);
+                System.out.println(entry.getValue() + "::" +  map.get(entry.getKey()));
+                break;
+            }    
+        }
+        String decodedContent = decodeContent(extractedContent, codes);
+        System.out.println(decodedContent);
+        //'\0' is the null char it terminates the string in c but doesn't behave the same in java it can display the chars after it
+        // Character xs = '\0';
+        // char sd[] = {'g','g','\0','t'}; 
+        // String s = "" + xs + "f";
+        // System.out.println(sd);
     }
 }
 
@@ -406,10 +482,10 @@ class HuffmanInternalNode implements HuffmanBaseNode{
     private int freq;
     private HuffmanBaseNode left;
     private HuffmanBaseNode right;
-    public HuffmanInternalNode(HuffmanBaseNode left, HuffmanBaseNode right){
+    public HuffmanInternalNode(HuffmanBaseNode left, HuffmanBaseNode right, int freq){
         this.left = left;
         this.right = right;
-        this.freq = left.weight() + right.weight();
+        this.freq = freq;
     }
     public int weight(){
         return freq;
@@ -423,6 +499,12 @@ class HuffmanInternalNode implements HuffmanBaseNode{
     public HuffmanBaseNode getRight(){
         return right;
     }
+    public void setLeft(HuffmanBaseNode left){
+        this.left = left;
+    }
+    public void setRight(HuffmanBaseNode right){
+        this.right = right;
+    }
     @Override
     public String toString(){
         return "{Internal Node Freq: " + freq + "}";
@@ -435,7 +517,7 @@ class HuffmanTree implements Comparable<HuffmanTree>{
         this.root = root;
     }
     public HuffmanTree(HuffmanBaseNode left, HuffmanBaseNode right,int weight){
-        this.root = new HuffmanInternalNode((HuffmanInternalNode)left,(HuffmanInternalNode)right);
+        this.root = new HuffmanInternalNode((HuffmanInternalNode)left,(HuffmanInternalNode)right,weight);
     }
     public HuffmanBaseNode getRoot(){
         return root;
@@ -462,12 +544,14 @@ class HuffmanTree implements Comparable<HuffmanTree>{
             // c+=entry.getValue();
             // set.add(tree);
         }
+        System.out.println(queue);
         // System.out.println(c);
         while (queue.size() > 1) {
             // System.out.println(queue.poll());
             HuffmanTree left = queue.poll();
             HuffmanTree right = queue.poll();
-            HuffmanInternalNode internal = new HuffmanInternalNode(left.getRoot(),right.getRoot());
+            int freq = left.getRoot().weight() + right.getRoot().weight();
+            HuffmanInternalNode internal = new HuffmanInternalNode(left.getRoot(),right.getRoot(),freq);
             tree = new HuffmanTree(internal);
             queue.add(tree);
         }
